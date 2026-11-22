@@ -4,6 +4,10 @@ A mobile-first 3D tilt game built with TypeScript, Vite, Three.js, and the Web A
 
 Hold a phone in landscape and tilt in two dimensions. A centered phone follows the safe white `+1` chain. Move away from center to collect cyan `+5` and gold `+10` balls. Touching a glowing red cross ends the run.
 
+## Game Link
+
+Play the game here: [Balance Tunnel](https://fangningzhang81.github.io/balance-tunnel/)
+
 ## Requirements
 
 - Node.js 24 LTS or another Vite-compatible current Node release
