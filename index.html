@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#050712" />
+    <meta name="description" content="Tilt through a neon tunnel, collect points, and avoid the red crosses." />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Balance Tunnel" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+    <title>Balance Tunnel</title>
+  </head>
+  <body>
+    <div id="game-root" aria-label="Balance Tunnel game">
+      <canvas id="game-canvas"></canvas>
+      <div class="scanlines" aria-hidden="true"></div>
+
+      <header id="hud" class="hud hidden" aria-live="polite">
+        <div class="metric"><span>Score</span><strong id="hud-score">0</strong></div>
+        <div class="metric"><span>Time</span><strong id="hud-time">0.0s</strong></div>
+        <div class="metric"><span>Distance</span><strong id="hud-distance">0m</strong></div>
+        <div class="hud-actions">
+          <button id="pause-button" class="icon-button" type="button">Pause</button>
+          <button id="restart-button" class="icon-button" type="button">Restart</button>
+          <button id="hud-sound-button" class="icon-button" type="button">Sound On</button>
+        </div>
+      </header>
+
+      <main id="start-screen" class="screen active">
+        <section class="panel start-panel">
+          <p class="eyebrow">Tilt · Collect · Survive</p>
+          <h1>Balance<br /><span>Tunnel</span></h1>
+          <p class="lede">Hold your phone comfortably. Tilt to move. Stay centered for safe points.</p>
+          <div class="legend" aria-label="Scoring guide">
+            <span class="legend-item white"><i>+1</i> Center line</span>
+            <span class="legend-item cyan"><i>+5</i> Medium risk</span>
+            <span class="legend-item gold"><i>+10</i> High risk</span>
+            <span class="legend-item red"><i>×</i> Game over</span>
+          </div>
+          <p id="device-message" class="device-message">For the best experience, rotate your phone to landscape.</p>
+          <div class="primary-actions">
+            <button id="start-button" class="primary-button" type="button">Start</button>
+            <button id="start-sound-button" class="secondary-button" type="button">Sound On</button>
+          </div>
+          <p class="best-line">Best score <strong id="start-best">0</strong></p>
+          <p id="install-note" class="install-note">Install from your browser menu to play full-screen from your home screen.</p>
+          <p id="error-message" class="error-message hidden" role="alert"></p>
+        </section>
+      </main>
+
+      <section id="countdown-screen" class="screen countdown-screen" aria-live="assertive">
+        <div>
+          <p>Hold steady</p>
+          <strong id="countdown-value">3</strong>
+          <span>Neutral position calibrated</span>
+        </div>
+      </section>
+
+      <section id="pause-screen" class="screen pause-screen">
+        <div class="panel compact-panel">
+          <p class="eyebrow">Run paused</p>
+          <h2>Stay balanced</h2>
+          <button id="resume-button" class="primary-button" type="button">Resume</button>
+        </div>
+      </section>
+
+      <section id="game-over-screen" class="screen">
+        <div class="panel game-over-panel">
+          <p class="eyebrow">Signal lost</p>
+          <h2>Game Over</h2>
+          <p id="new-best" class="new-best hidden">New high score</p>
+          <div class="results">
+            <div><span>Score</span><strong id="result-score">0</strong></div>
+            <div><span>Time</span><strong id="result-time">0.0s</strong></div>
+            <div><span>Distance</span><strong id="result-distance">0m</strong></div>
+            <div><span>Best</span><strong id="result-best">0</strong></div>
+          </div>
+          <div class="primary-actions">
+            <button id="game-over-restart" class="primary-button" type="button">Restart</button>
+            <button id="game-over-sound" class="secondary-button" type="button">Sound On</button>
+          </div>
+        </div>
+      </section>
+
+      <div id="portrait-overlay" class="portrait-overlay">
+        <div class="phone-icon" aria-hidden="true"></div>
+        <strong>Rotate your phone</strong>
+        <span>Balance Tunnel is designed for landscape play.</span>
+      </div>
+
+      <div id="impact-flash" class="impact-flash" aria-hidden="true"></div>
+      <div id="score-pop" class="score-pop" aria-live="polite"></div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
