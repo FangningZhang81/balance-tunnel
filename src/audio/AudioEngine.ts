@@ -1,8 +1,11 @@
 import { clamp01 } from '../logic/math';
 
 export class AudioEngine {
+  private static readonly PLAYING_GAIN = 0.82;
+
   private context: AudioContext | null = null;
   private master: GainNode | null = null;
+  private compressor: DynamicsCompressorNode | null = null;
   private analyser: AnalyserNode | null = null;
   private frequencyData: Uint8Array<ArrayBuffer> | null = null;
   private oscillators: OscillatorNode[] = [];
@@ -19,17 +22,17 @@ export class AudioEngine {
     if (!this.context) this.createGraph();
     if (this.context?.state === 'suspended') await this.context.resume();
     this.paused = false;
-    this.applyGain(0.35);
+    this.applyGain(AudioEngine.PLAYING_GAIN);
   }
 
   setPaused(paused: boolean): void {
     this.paused = paused;
-    this.applyGain(paused ? 0 : 0.35);
+    this.applyGain(paused ? 0 : AudioEngine.PLAYING_GAIN);
   }
 
   setEnabled(enabled: boolean): void {
     this.enabled = enabled;
-    this.applyGain(this.paused || !enabled ? 0 : 0.35);
+    this.applyGain(this.paused || !enabled ? 0 : AudioEngine.PLAYING_GAIN);
   }
 
   isEnabled(): boolean { return this.enabled; }
@@ -37,12 +40,12 @@ export class AudioEngine {
   score(value: 1 | 5 | 10): void {
     if (!this.enabled || !this.context || !this.master) return;
     const notes = value === 1 ? [880] : value === 5 ? [660, 990] : [660, 990, 1320];
-    notes.forEach((frequency, index) => this.tone(frequency, 0.06 + index * 0.055, 0.13, value === 10 ? 'triangle' : 'sine', 0.12));
+    notes.forEach((frequency, index) => this.tone(frequency, 0.06 + index * 0.055, 0.15, value === 10 ? 'triangle' : 'sine', 0.2));
   }
 
   impact(): void {
     if (!this.enabled || !this.context || !this.master) return;
-    this.tone(105, 0, 0.42, 'sawtooth', 0.22, 42);
+    this.tone(180, 0, 0.42, 'sawtooth', 0.32, 58);
   }
 
   energy(): number {
@@ -74,19 +77,27 @@ export class AudioEngine {
     this.analyser.fftSize = 128;
     this.analyser.smoothingTimeConstant = 0.84;
     this.frequencyData = new Uint8Array(this.analyser.frequencyBinCount);
-    this.master.connect(this.analyser);
+    this.compressor = this.context.createDynamicsCompressor();
+    this.compressor.threshold.value = -18;
+    this.compressor.knee.value = 12;
+    this.compressor.ratio.value = 8;
+    this.compressor.attack.value = 0.003;
+    this.compressor.release.value = 0.25;
+    this.master.connect(this.compressor);
+    this.compressor.connect(this.analyser);
     this.analyser.connect(this.context.destination);
 
-    this.continuousOscillator(55, 'sine', 0.11);
-    this.continuousOscillator(82.41, 'triangle', 0.045);
+    // Phone speakers reproduce these fundamentals far better than sub-bass.
+    this.continuousOscillator(110, 'sine', 0.16);
+    this.continuousOscillator(164.81, 'triangle', 0.07);
 
     let step = 0;
     const arp = [220, 277.18, 329.63, 415.3, 329.63, 277.18];
     this.timers.push(window.setInterval(() => {
-      if (!this.paused && this.enabled) this.tone(arp[step++ % arp.length], 0, 0.18, 'triangle', 0.035);
+      if (!this.paused && this.enabled) this.tone(arp[step++ % arp.length], 0, 0.18, 'triangle', 0.07);
     }, 360));
     this.timers.push(window.setInterval(() => {
-      if (!this.paused && this.enabled) this.tone(72, 0, 0.12, 'sine', 0.13, 40);
+      if (!this.paused && this.enabled) this.tone(145, 0, 0.12, 'sine', 0.19, 72);
     }, 720));
   }
 
