@@ -2,43 +2,85 @@ import { clamp01 } from '../logic/math';
 
 export class AudioEngine {
   private static readonly PLAYING_GAIN = 0.82;
+  private static readonly MUSIC_URL = `${import.meta.env.BASE_URL}audio/swim-with-me-at-lovequay.mp3`;
 
   private context: AudioContext | null = null;
   private master: GainNode | null = null;
   private compressor: DynamicsCompressorNode | null = null;
   private analyser: AnalyserNode | null = null;
   private frequencyData: Uint8Array<ArrayBuffer> | null = null;
-  private oscillators: OscillatorNode[] = [];
-  private timers: number[] = [];
+  private musicGain: GainNode | null = null;
+  private effectsGain: GainNode | null = null;
+  private musicVolume = 0.6;
+  private effectsVolume = 1;
+  private musicBuffer: AudioBuffer | null = null;
+  private musicLoad: Promise<AudioBuffer> | null = null;
+  private musicSource: AudioBufferSourceNode | null = null;
+  private musicOffset = 0;
+  private musicStartedAt = 0;
   private enabled = true;
   private paused = true;
   private smoothedEnergy = 0.15;
 
-  constructor(enabled: boolean) {
+  constructor(enabled: boolean, musicVolume = 0.6, effectsVolume = 1) {
     this.enabled = enabled;
+    this.setMusicVolume(musicVolume);
+    this.setEffectsVolume(effectsVolume);
   }
 
   async start(): Promise<void> {
     if (!this.context) this.createGraph();
-    if (this.context?.state === 'suspended') await this.context.resume();
-    this.paused = false;
-    this.applyGain(AudioEngine.PLAYING_GAIN);
+    const context = this.context!;
+    // Resume on the Start/Sound button gesture, before fetching or decoding music.
+    const resumed = context.state === 'suspended' ? context.resume() : Promise.resolve();
+    this.musicLoad ??= this.loadMusic(context);
+    try {
+      const [, buffer] = await Promise.all([resumed, this.musicLoad]);
+      if (this.context !== context) return;
+      this.musicBuffer = buffer;
+      this.playMusic();
+    } catch (error) {
+      if (this.context === context) this.musicLoad = null;
+      throw error;
+    }
+  }
+
+  reset(): void {
+    this.setPaused(true);
+    this.musicOffset = 0;
   }
 
   setPaused(paused: boolean): void {
     this.paused = paused;
-    this.applyGain(paused ? 0 : AudioEngine.PLAYING_GAIN);
+    if (paused) this.stopMusic();
+    else this.playMusic();
   }
 
   setEnabled(enabled: boolean): void {
     this.enabled = enabled;
-    this.applyGain(this.paused || !enabled ? 0 : AudioEngine.PLAYING_GAIN);
+    this.applyGain(AudioEngine.PLAYING_GAIN);
   }
 
   isEnabled(): boolean { return this.enabled; }
 
+  getMusicVolume(): number { return this.musicVolume; }
+
+  getEffectsVolume(): number { return this.effectsVolume; }
+
+  setMusicVolume(volume: number): void {
+    if (!Number.isFinite(volume)) return;
+    this.musicVolume = clamp01(volume);
+    this.setChannelGain(this.musicGain, this.musicVolume);
+  }
+
+  setEffectsVolume(volume: number): void {
+    if (!Number.isFinite(volume)) return;
+    this.effectsVolume = clamp01(volume);
+    this.setChannelGain(this.effectsGain, this.effectsVolume);
+  }
+
   score(value: 1 | 5 | 10): void {
-    if (!this.enabled || !this.context || !this.master) return;
+    if (this.paused || !this.enabled || !this.context || !this.master) return;
     const notes = value === 1 ? [880] : value === 5 ? [660, 990] : [660, 990, 1320];
     notes.forEach((frequency, index) => this.tone(frequency, 0.06 + index * 0.055, 0.15, value === 10 ? 'triangle' : 'sine', 0.2));
   }
@@ -63,16 +105,29 @@ export class AudioEngine {
   }
 
   dispose(): void {
-    this.timers.forEach((timer) => window.clearInterval(timer));
-    this.oscillators.forEach((oscillator) => { try { oscillator.stop(); } catch { /* already stopped */ } });
+    this.setPaused(true);
     void this.context?.close();
     this.context = null;
+    this.master = null;
+    this.compressor = null;
+    this.analyser = null;
+    this.frequencyData = null;
+    this.musicGain = null;
+    this.effectsGain = null;
+    this.musicBuffer = null;
+    this.musicLoad = null;
   }
 
   private createGraph(): void {
     this.context = new AudioContext();
     this.master = this.context.createGain();
-    this.master.gain.value = 0;
+    this.master.gain.value = this.enabled ? AudioEngine.PLAYING_GAIN : 0;
+    this.musicGain = this.context.createGain();
+    this.musicGain.gain.value = this.musicVolume;
+    this.musicGain.connect(this.master);
+    this.effectsGain = this.context.createGain();
+    this.effectsGain.gain.value = this.effectsVolume;
+    this.effectsGain.connect(this.master);
     this.analyser = this.context.createAnalyser();
     this.analyser.fftSize = 128;
     this.analyser.smoothingTimeConstant = 0.84;
@@ -86,35 +141,35 @@ export class AudioEngine {
     this.master.connect(this.compressor);
     this.compressor.connect(this.analyser);
     this.analyser.connect(this.context.destination);
-
-    // Phone speakers reproduce these fundamentals far better than sub-bass.
-    this.continuousOscillator(110, 'sine', 0.16);
-    this.continuousOscillator(164.81, 'triangle', 0.07);
-
-    let step = 0;
-    const arp = [220, 277.18, 329.63, 415.3, 329.63, 277.18];
-    this.timers.push(window.setInterval(() => {
-      if (!this.paused && this.enabled) this.tone(arp[step++ % arp.length], 0, 0.18, 'triangle', 0.07);
-    }, 360));
-    this.timers.push(window.setInterval(() => {
-      if (!this.paused && this.enabled) this.tone(145, 0, 0.12, 'sine', 0.19, 72);
-    }, 720));
   }
 
-  private continuousOscillator(frequency: number, type: OscillatorType, volume: number): void {
-    if (!this.context || !this.master) return;
-    const oscillator = this.context.createOscillator();
-    const gain = this.context.createGain();
-    oscillator.frequency.value = frequency;
-    oscillator.type = type;
-    gain.gain.value = volume;
-    oscillator.connect(gain).connect(this.master);
-    oscillator.start();
-    this.oscillators.push(oscillator);
+  private async loadMusic(context: AudioContext): Promise<AudioBuffer> {
+    const response = await fetch(AudioEngine.MUSIC_URL);
+    if (!response.ok) throw new Error('Background music could not be loaded. Check your connection and try again.');
+    return context.decodeAudioData(await response.arrayBuffer());
+  }
+
+  private playMusic(): void {
+    if (this.paused || this.musicSource || !this.context || !this.musicBuffer || !this.musicGain) return;
+    const source = this.context.createBufferSource();
+    source.buffer = this.musicBuffer;
+    source.loop = true;
+    source.connect(this.musicGain);
+    this.musicStartedAt = this.context.currentTime;
+    source.start(0, this.musicOffset);
+    this.musicSource = source;
+  }
+
+  private stopMusic(): void {
+    if (!this.musicSource || !this.context || !this.musicBuffer) return;
+    this.musicOffset = (this.musicOffset + this.context.currentTime - this.musicStartedAt) % this.musicBuffer.duration;
+    this.musicSource.stop();
+    this.musicSource.disconnect();
+    this.musicSource = null;
   }
 
   private tone(frequency: number, delay: number, duration: number, type: OscillatorType, volume: number, endFrequency?: number): void {
-    if (!this.context || !this.master) return;
+    if (!this.context || !this.effectsGain || this.effectsVolume === 0) return;
     const now = this.context.currentTime + delay;
     const oscillator = this.context.createOscillator();
     const gain = this.context.createGain();
@@ -124,15 +179,18 @@ export class AudioEngine {
     gain.gain.setValueAtTime(0.0001, now);
     gain.gain.exponentialRampToValueAtTime(volume, now + 0.012);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-    oscillator.connect(gain).connect(this.master);
+    oscillator.connect(gain).connect(this.effectsGain);
     oscillator.start(now);
     oscillator.stop(now + duration + 0.02);
   }
 
   private applyGain(target: number): void {
-    if (!this.context || !this.master) return;
-    const value = this.enabled ? target : 0;
-    this.master.gain.cancelScheduledValues(this.context.currentTime);
-    this.master.gain.setTargetAtTime(value, this.context.currentTime, 0.035);
+    this.setChannelGain(this.master, this.enabled ? target : 0);
+  }
+
+  private setChannelGain(channel: GainNode | null, volume: number): void {
+    if (!this.context || !channel) return;
+    channel.gain.cancelScheduledValues(this.context.currentTime);
+    channel.gain.setTargetAtTime(volume, this.context.currentTime, 0.035);
   }
 }
